@@ -7,7 +7,7 @@
 
   <link rel="icon" href="data:," />
 
-  <!-- SEO base (se actualiza al cargar Builder; ojo: esto NO es SEO SSR real) -->
+  <!-- SEO base (se actualiza al cargar Builder; NO es SSR real) -->
   <meta name="description" content="" />
   <link rel="canonical" href="" />
 
@@ -23,17 +23,38 @@
   <meta name="twitter:url" content="" />
   <meta name="twitter:image" content="" />
 
+  <!-- Builder Web Components -->
   <script async src="https://cdn.builder.io/js/webcomponents"></script>
 
   <style>
     body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    builder-component { display:block; min-height: 100vh; }
-    .shell { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    #debug {
+      position: sticky; top: 0; z-index: 9999;
+      padding: 10px 12px; font-size: 12px; line-height: 1.35;
+      background: #0b1220; color: #e7eefc;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    #debug code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 6px; }
+    #debug .ok { color: #7CFC98; }
+    #debug .bad { color: #FF8A8A; }
+    #app { min-height: calc(100vh - 46px); }
+    builder-component { display:block; min-height: 60vh; }
+    .shell { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    a { color: inherit; }
   </style>
 </head>
 
 <body>
-  <builder-component id="builderRoot"></builder-component>
+  <div id="debug">
+    <div>URL: <code id="d-url"></code> | search: <code id="d-search"></code> | hash: <code id="d-hash"></code></div>
+    <div>BASE: <code id="d-base"></code> | urlPath->Builder: <code id="d-path"></code></div>
+    <div>webcomponents: <code id="d-wc"></code> | fetch: <code id="d-fetch"></code></div>
+  </div>
+
+  <div id="app">
+    <builder-component id="builderRoot"></builder-component>
+  </div>
 
   <script>
     // =========================
@@ -45,54 +66,57 @@
     const NOT_FOUND_PATH = "/404";     // opcional: crea una page en Builder con URL "/404"
     // =========================
 
-    const builderEl = document.getElementById("builderRoot");
+    const $ = (id) => document.getElementById(id);
+    const builderEl = $("builderRoot");
+
+    function setStatus(el, ok, text) {
+      el.textContent = text;
+      el.className = ok ? "ok" : "bad";
+    }
+
+    $("d-url").textContent = location.pathname || "/";
+    $("d-search").textContent = location.search || "(none)";
+    $("d-hash").textContent = location.hash || "(none)";
+    $("d-base").textContent = BASE;
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    async function waitForBuilderComponent() {
+    async function waitForBuilderComponent(timeoutMs = 8000) {
+      const start = Date.now();
       while (!customElements.get("builder-component")) {
-        await sleep(25);
+        if (Date.now() - start > timeoutMs) throw new Error("Timeout esperando builder webcomponents");
+        await sleep(30);
       }
+      return true;
     }
 
-    // 1) Lee la ruta real desde ?p= (SPA redirect típico en GitHub Pages)
+    // Lee path desde ?p= o ?path= (GitHub Pages SPA trick)
     function readSpaRedirectPath() {
       const params = new URLSearchParams(location.search);
-      // muchos 404-tricks usan ?p= o ?path=
       const p = params.get("p") || params.get("path");
       if (!p) return null;
 
-      // p suele venir como "/testing" (ya decodeado por URLSearchParams)
-      let path = p.trim();
+      let path = (p || "").trim();
       if (!path.startsWith("/")) path = "/" + path;
 
       // Limpia la URL (quita ?p=...) para que quede bonita
-      // Mantiene el hash si lo hubiera
-      const clean = location.pathname + location.hash;
+      const clean = location.pathname + (location.hash || "");
       history.replaceState({}, "", clean);
 
       return path;
     }
 
-    // 2) Convierte URL actual (GH Pages) -> urlPath Builder
     function toUrlPath() {
-      // Si venimos de redirect SPA, manda eso directamente a Builder
       const redirected = readSpaRedirectPath();
       if (redirected) return redirected;
 
       const p = location.pathname || "/";
-
-      // Casos:
-      // /test-pages           -> /
-      // /test-pages/          -> /
-      // /test-pages/testing   -> /testing
       if (p === BASE || p === BASE + "/") return "/";
       if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
-      return p; // si no está bajo BASE, úsalo tal cual
+      return p;
     }
 
     function canonicalUrl() {
-      // Canonical sin query
       return location.origin + (location.pathname || "/");
     }
 
@@ -104,105 +128,93 @@
         `&limit=1&enrich=true`;
 
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`Builder API error ${res.status}`);
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Builder API ${res.status} ${res.statusText}\n${txt}`);
+      }
       const data = await res.json();
       return data?.results?.[0] || null;
     }
 
-    // ---------- SEO helpers ----------
+    // SEO helpers (client-side)
     function ensureMeta(attr, key, value) {
-      if (value == null) return;
       let el = document.head.querySelector(`meta[${attr}="${key}"]`);
       if (!el) {
         el = document.createElement("meta");
         el.setAttribute(attr, key);
         document.head.appendChild(el);
       }
-      el.setAttribute("content", value);
+      el.setAttribute("content", value || "");
     }
 
     function ensureLink(rel, href) {
-      if (!href) return;
       let el = document.head.querySelector(`link[rel="${rel}"]`);
       if (!el) {
         el = document.createElement("link");
         el.setAttribute("rel", rel);
         document.head.appendChild(el);
       }
-      el.setAttribute("href", href);
+      el.setAttribute("href", href || "");
     }
 
     function absolutize(url) {
       if (!url) return "";
-      try { return new URL(url, location.origin).toString(); }
-      catch { return ""; }
+      try { return new URL(url, location.origin).toString(); } catch { return ""; }
     }
 
     function pickSeoImage(d) {
-      return (
-        d.ogImage ||
-        d.og_image ||
-        d.image ||
-        d.imageUrl ||
-        d.socialImage ||
-        (d.meta && (d.meta.ogImage || d.meta.image)) ||
-        ""
-      );
+      return d.ogImage || d.image || d.imageUrl || d.socialImage || (d.meta && (d.meta.ogImage || d.meta.image)) || "";
     }
 
-    function getSeoFromContent(content) {
+    function applySeoFromContent(content) {
       const d = content?.data || {};
-      return {
-        title: d.title || content?.name || "",
-        description: d.description || "",
-        image: pickSeoImage(d)
-      };
-    }
+      const title = d.title || content?.name || "";
+      const description = d.description || "";
+      const image = pickSeoImage(d);
 
-    function applySeo({ title, description, image }) {
       const canon = canonicalUrl();
       const img = absolutize(image);
 
       if (title) document.title = title;
-
-      ensureMeta("name", "description", description || "");
+      ensureMeta("name", "description", description);
       ensureLink("canonical", canon);
 
       ensureMeta("property", "og:type", "website");
-      ensureMeta("property", "og:title", title || "");
-      ensureMeta("property", "og:description", description || "");
+      ensureMeta("property", "og:title", title);
+      ensureMeta("property", "og:description", description);
       ensureMeta("property", "og:url", canon);
-      ensureMeta("property", "og:image", img || "");
+      ensureMeta("property", "og:image", img);
 
       ensureMeta("name", "twitter:card", img ? "summary_large_image" : "summary");
-      ensureMeta("name", "twitter:title", title || "");
-      ensureMeta("name", "twitter:description", description || "");
+      ensureMeta("name", "twitter:title", title);
+      ensureMeta("name", "twitter:description", description);
       ensureMeta("name", "twitter:url", canon);
-      ensureMeta("name", "twitter:image", img || "");
+      ensureMeta("name", "twitter:image", img);
     }
 
-    // ---------- navegación interna (respeta BASE) ----------
-    function normalizeHref(href) {
-      // Convierte "/testing" -> "/test-pages/testing" (solo en GH Pages)
-      if (!href) return href;
-      if (/^https?:\/\//i.test(href)) return href;
-      if (href.startsWith("mailto:") || href.startsWith("tel:")) return href;
-
-      // ya viene con BASE
-      if (href === BASE || href.startsWith(BASE + "/")) return href;
-
-      // rutas absolutas del sitio "/testing"
-      if (href.startsWith("/")) return BASE + href;
-
-      // rutas relativas "testing"
-      return BASE + "/" + href.replace(/^\.?\//, "");
+    function showError(err) {
+      builderEl.removeAttribute("content");
+      builderEl.innerHTML = `
+        <div class="shell">
+          <h2>❌ Error cargando Builder</h2>
+          <pre>${String(err)}</pre>
+          <p>Abre DevTools → Network y mira la llamada a <code>cdn.builder.io/api/v2/content</code>.</p>
+        </div>`;
     }
 
     async function render() {
       const urlPath = toUrlPath();
+      $("d-path").textContent = urlPath;
 
-      await waitForBuilderComponent();
+      try {
+        await waitForBuilderComponent();
+        setStatus($("d-wc"), true, "OK");
+      } catch (e) {
+        setStatus($("d-wc"), false, "NO (timeout)");
+        throw e;
+      }
 
+      setStatus($("d-fetch"), true, "cargando...");
       let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
 
       if (!content && urlPath !== "/") {
@@ -210,6 +222,7 @@
       }
 
       if (!content) {
+        setStatus($("d-fetch"), false, "0 results");
         builderEl.removeAttribute("content");
         builderEl.innerHTML = `
           <div class="shell">
@@ -217,43 +230,47 @@
             <p>No existe una página publicada para <b>${urlPath}</b>.</p>
             <p><a href="${BASE}/">Volver a Home</a></p>
           </div>`;
-        applySeo({ title: "404 - No encontrado", description: "", image: "" });
         return;
       }
 
-      applySeo(getSeoFromContent(content));
+      setStatus($("d-fetch"), true, "OK (1 result)");
+
+      applySeoFromContent(content);
 
       builderEl.setAttribute("api-key", API_KEY);
       builderEl.setAttribute("model", PAGE_MODEL);
       builderEl.setAttribute("content", JSON.stringify(content));
     }
 
+    // Navegación SPA: intercepta links internos
     document.addEventListener("click", (e) => {
       const a = e.target.closest("a");
       if (!a) return;
 
-      const hrefRaw = a.getAttribute("href");
-      if (!hrefRaw) return;
+      const href = a.getAttribute("href");
+      if (!href) return;
 
       const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
       if (isModified) return;
-
-      // intercepta solo internos
-      if (/^https?:\/\//i.test(hrefRaw)) return;
+      if (/^https?:\/\//i.test(href)) return;
 
       e.preventDefault();
-      const href = normalizeHref(hrefRaw);
-      history.pushState({}, "", href);
-      render().catch(console.error);
+
+      // Normaliza para GitHub Pages: "/testing" => "/test-pages/testing"
+      let next = href;
+      if (next.startsWith("/")) {
+        if (!(next === BASE || next.startsWith(BASE + "/"))) next = BASE + next;
+      } else {
+        next = BASE + "/" + next.replace(/^\.?\//, "");
+      }
+
+      history.pushState({}, "", next);
+      render().catch(err => { console.error(err); showError(err); });
     });
 
-    window.addEventListener("popstate", () => render().catch(console.error));
+    window.addEventListener("popstate", () => render().catch(err => { console.error(err); showError(err); }));
 
-    render().catch(err => {
-      console.error(err);
-      builderEl.innerHTML = `<div class="shell"><h1>Error</h1><pre>${String(err)}</pre></div>`;
-      applySeo({ title: "Error", description: "", image: "" });
-    });
+    render().catch(err => { console.error(err); showError(err); });
   </script>
 </body>
 </html>
