@@ -3,274 +3,62 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Beluga</title>
+  <title>Mi web con Builder</title>
 
-  <link rel="icon" href="data:," />
-
-  <!-- SEO base (se actualiza al cargar Builder; NO es SSR real) -->
-  <meta name="description" content="" />
-  <link rel="canonical" href="" />
-
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="" />
-  <meta property="og:description" content="" />
-  <meta property="og:url" content="" />
-  <meta property="og:image" content="" />
-
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="" />
-  <meta name="twitter:description" content="" />
-  <meta name="twitter:url" content="" />
-  <meta name="twitter:image" content="" />
+  <!-- evita warning/404 de favicon -->
+  <link rel="icon" href="data:,">
 
   <!-- Builder Web Components -->
   <script async src="https://cdn.builder.io/js/webcomponents"></script>
 
   <style>
     body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    #debug {
-      position: sticky; top: 0; z-index: 9999;
-      padding: 10px 12px; font-size: 12px; line-height: 1.35;
-      background: #0b1220; color: #e7eefc;
-      border-bottom: 1px solid rgba(255,255,255,.12);
-    }
-    #debug code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 6px; }
-    #debug .ok { color: #7CFC98; }
-    #debug .bad { color: #FF8A8A; }
-    #app { min-height: calc(100vh - 46px); }
-    builder-component { display:block; min-height: 60vh; }
-    .shell { padding: 20px; max-width: 1100px; margin: 0 auto; }
-    pre { white-space: pre-wrap; word-break: break-word; }
-    a { color: inherit; }
+    #debug { padding: 12px; font-size: 14px; }
+    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+    builder-component { display: block; min-height: 100vh; }
   </style>
 </head>
-
 <body>
+
   <div id="debug">
-    <div>URL: <code id="d-url"></code> | search: <code id="d-search"></code> | hash: <code id="d-hash"></code></div>
-    <div>BASE: <code id="d-base"></code> | urlPath->Builder: <code id="d-path"></code></div>
-    <div>webcomponents: <code id="d-wc"></code> | fetch: <code id="d-fetch"></code></div>
+    <div>URL actual: <code id="p1"></code></div>
+    <div>Builder url-path: <code id="p2"></code></div>
+    <div>customElements builder-component: <code id="p3"></code></div>
   </div>
 
-  <div id="app">
-    <builder-component id="builderRoot"></builder-component>
-  </div>
+  <builder-component
+    id="builderPage"
+    api-key="f450ca45929045f782ca4fdfb394abb9"
+    model="page">
+  </builder-component>
 
   <script>
-    // =========================
-    // CONFIG
-    // =========================
-    const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
-    const BASE = "/test-pages";        // repo name en GitHub Pages
-    const PAGE_MODEL = "page";         // model en Builder
-    const NOT_FOUND_PATH = "/404";     // opcional: crea una page en Builder con URL "/404"
-    // =========================
+    // === Ajusta este BASE a tu repo de GitHub Pages ===
+    const BASE = "/test-pages";
 
-    const $ = (id) => document.getElementById(id);
-    const builderEl = $("builderRoot");
+    // Calcula el path que Builder espera: "/" o "/algo"
+    const path = location.pathname.startsWith(BASE)
+      ? (location.pathname.slice(BASE.length) || "/")
+      : (location.pathname || "/");
 
-    function setStatus(el, ok, text) {
-      el.textContent = text;
-      el.className = ok ? "ok" : "bad";
-    }
+    // Builder usa esta variable global internamente en algunos setups
+    window.__BUILDER_URL_PATH__ = path;
 
-    $("d-url").textContent = location.pathname || "/";
-    $("d-search").textContent = location.search || "(none)";
-    $("d-hash").textContent = location.hash || "(none)";
-    $("d-base").textContent = BASE;
+    document.getElementById("p1").textContent = location.pathname;
+    document.getElementById("p2").textContent = window.__BUILDER_URL_PATH__;
 
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    // espera a que el custom element exista y aplica url-path
+    const apply = () => {
+      const def = customElements.get("builder-component");
+      document.getElementById("p3").textContent = def ? "OK" : "undefined";
+      if (!def) return setTimeout(apply, 50);
 
-    async function waitForBuilderComponent(timeoutMs = 8000) {
-      const start = Date.now();
-      while (!customElements.get("builder-component")) {
-        if (Date.now() - start > timeoutMs) throw new Error("Timeout esperando builder webcomponents");
-        await sleep(30);
-      }
-      return true;
-    }
+      document.getElementById("builderPage")
+        .setAttribute("url-path", window.__BUILDER_URL_PATH__);
 
-    // Lee path desde ?p= o ?path= (GitHub Pages SPA trick)
-    function readSpaRedirectPath() {
-      const params = new URLSearchParams(location.search);
-      const p = params.get("p") || params.get("path");
-      if (!p) return null;
-
-      let path = (p || "").trim();
-      if (!path.startsWith("/")) path = "/" + path;
-
-      // Limpia la URL (quita ?p=...) para que quede bonita
-      const clean = location.pathname + (location.hash || "");
-      history.replaceState({}, "", clean);
-
-      return path;
-    }
-
-    function toUrlPath() {
-      const redirected = readSpaRedirectPath();
-      if (redirected) return redirected;
-
-      const p = location.pathname || "/";
-      if (p === BASE || p === BASE + "/") return "/";
-      if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
-      return p;
-    }
-
-    function canonicalUrl() {
-      return location.origin + (location.pathname || "/");
-    }
-
-    async function fetchBuilderContent(model, urlPath) {
-      const url =
-        `https://cdn.builder.io/api/v2/content/${encodeURIComponent(model)}` +
-        `?apiKey=${encodeURIComponent(API_KEY)}` +
-        `&userAttributes.urlPath=${encodeURIComponent(urlPath)}` +
-        `&limit=1&enrich=true`;
-
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Builder API ${res.status} ${res.statusText}\n${txt}`);
-      }
-      const data = await res.json();
-      return data?.results?.[0] || null;
-    }
-
-    // SEO helpers (client-side)
-    function ensureMeta(attr, key, value) {
-      let el = document.head.querySelector(`meta[${attr}="${key}"]`);
-      if (!el) {
-        el = document.createElement("meta");
-        el.setAttribute(attr, key);
-        document.head.appendChild(el);
-      }
-      el.setAttribute("content", value || "");
-    }
-
-    function ensureLink(rel, href) {
-      let el = document.head.querySelector(`link[rel="${rel}"]`);
-      if (!el) {
-        el = document.createElement("link");
-        el.setAttribute("rel", rel);
-        document.head.appendChild(el);
-      }
-      el.setAttribute("href", href || "");
-    }
-
-    function absolutize(url) {
-      if (!url) return "";
-      try { return new URL(url, location.origin).toString(); } catch { return ""; }
-    }
-
-    function pickSeoImage(d) {
-      return d.ogImage || d.image || d.imageUrl || d.socialImage || (d.meta && (d.meta.ogImage || d.meta.image)) || "";
-    }
-
-    function applySeoFromContent(content) {
-      const d = content?.data || {};
-      const title = d.title || content?.name || "";
-      const description = d.description || "";
-      const image = pickSeoImage(d);
-
-      const canon = canonicalUrl();
-      const img = absolutize(image);
-
-      if (title) document.title = title;
-      ensureMeta("name", "description", description);
-      ensureLink("canonical", canon);
-
-      ensureMeta("property", "og:type", "website");
-      ensureMeta("property", "og:title", title);
-      ensureMeta("property", "og:description", description);
-      ensureMeta("property", "og:url", canon);
-      ensureMeta("property", "og:image", img);
-
-      ensureMeta("name", "twitter:card", img ? "summary_large_image" : "summary");
-      ensureMeta("name", "twitter:title", title);
-      ensureMeta("name", "twitter:description", description);
-      ensureMeta("name", "twitter:url", canon);
-      ensureMeta("name", "twitter:image", img);
-    }
-
-    function showError(err) {
-      builderEl.removeAttribute("content");
-      builderEl.innerHTML = `
-        <div class="shell">
-          <h2>❌ Error cargando Builder</h2>
-          <pre>${String(err)}</pre>
-          <p>Abre DevTools → Network y mira la llamada a <code>cdn.builder.io/api/v2/content</code>.</p>
-        </div>`;
-    }
-
-    async function render() {
-      const urlPath = toUrlPath();
-      $("d-path").textContent = urlPath;
-
-      try {
-        await waitForBuilderComponent();
-        setStatus($("d-wc"), true, "OK");
-      } catch (e) {
-        setStatus($("d-wc"), false, "NO (timeout)");
-        throw e;
-      }
-
-      setStatus($("d-fetch"), true, "cargando...");
-      let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
-
-      if (!content && urlPath !== "/") {
-        content = await fetchBuilderContent(PAGE_MODEL, NOT_FOUND_PATH);
-      }
-
-      if (!content) {
-        setStatus($("d-fetch"), false, "0 results");
-        builderEl.removeAttribute("content");
-        builderEl.innerHTML = `
-          <div class="shell">
-            <h1>404</h1>
-            <p>No existe una página publicada para <b>${urlPath}</b>.</p>
-            <p><a href="${BASE}/">Volver a Home</a></p>
-          </div>`;
-        return;
-      }
-
-      setStatus($("d-fetch"), true, "OK (1 result)");
-
-      applySeoFromContent(content);
-
-      builderEl.setAttribute("api-key", API_KEY);
-      builderEl.setAttribute("model", PAGE_MODEL);
-      builderEl.setAttribute("content", JSON.stringify(content));
-    }
-
-    // Navegación SPA: intercepta links internos
-    document.addEventListener("click", (e) => {
-      const a = e.target.closest("a");
-      if (!a) return;
-
-      const href = a.getAttribute("href");
-      if (!href) return;
-
-      const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
-      if (isModified) return;
-      if (/^https?:\/\//i.test(href)) return;
-
-      e.preventDefault();
-
-      // Normaliza para GitHub Pages: "/testing" => "/test-pages/testing"
-      let next = href;
-      if (next.startsWith("/")) {
-        if (!(next === BASE || next.startsWith(BASE + "/"))) next = BASE + next;
-      } else {
-        next = BASE + "/" + next.replace(/^\.?\//, "");
-      }
-
-      history.pushState({}, "", next);
-      render().catch(err => { console.error(err); showError(err); });
-    });
-
-    window.addEventListener("popstate", () => render().catch(err => { console.error(err); showError(err); }));
-
-    render().catch(err => { console.error(err); showError(err); });
+      console.log("✅ url-path aplicado:", window.__BUILDER_URL_PATH__);
+    };
+    apply();
   </script>
 </body>
 </html>
