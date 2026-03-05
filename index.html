@@ -1,116 +1,149 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Beluga (Builder + GitHub Pages)</title>
-  <link rel="icon" href="data:,">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Beluga · Builder + GitHub Pages</title>
 
-  <script async src="https://cdn.builder.io/js/webcomponents"></script>
+    <!-- evita 404 del favicon en consola -->
+    <link rel="icon" href="data:,">
 
-  <style>
-    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    builder-component { display: block; min-height: 100vh; }
-    .shell { padding: 24px; max-width: 1100px; margin: 0 auto; }
-    .muted { opacity: .7; }
-  </style>
-</head>
-<body>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+      header { padding: 16px 24px; border-bottom: 1px solid #eee; }
+      header a { margin-right: 12px; }
+      main { min-height: calc(100vh - 58px); }
+      builder-component { display:block; min-height: calc(100vh - 58px); }
+      .shell { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    </style>
 
-  <div class="shell muted" style="padding-bottom:0">
-    <a href="/test-pages/">Home</a> ·
-    <a href="/test-pages/about">About</a> ·
-    <a href="/test-pages/servicios">Servicios</a>
-  </div>
+    <script>
+      // ======= CONFIG =======
+      const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
+      const BASE = "/test-pages";     // repo name en GitHub Pages
+      const MODEL = "page";           // tu modelo de páginas en Builder
+      // ======================
 
-  <!-- IMPORTANTE: api-key y model aquí desde el principio -->
-  <builder-component
-    id="builderEl"
-    api-key="f450ca45929045f782ca4fdfb394abb9"
-    model="page">
-  </builder-component>
+      // Si venimos desde 404.html, tendremos ?p=/ruta
+      (function normalizeFrom404Redirect() {
+        const url = new URL(location.href);
+        const p = url.searchParams.get("p"); // ej: "/about"
+        if (p) {
+          // Limpia la query y deja la URL bonita /test-pages/about
+          const clean = (p.startsWith("/") ? p : "/" + p);
+          history.replaceState({}, "", BASE + (clean === "/" ? "/" : clean));
+        }
+      })();
 
-  <script>
-    const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
-    const BASE = "/test-pages";
-    const PAGE_MODEL = "page";
-
-    function toUrlPath() {
-      const p = location.pathname || "/";
-      if (p === BASE || p === BASE + "/") return "/";
-      if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
-      return p;
-    }
-
-    async function waitForBuilderComponent() {
-      while (!customElements.get("builder-component")) {
-        await new Promise(r => setTimeout(r, 30));
-      }
-    }
-
-    async function fetchBuilderContent(model, urlPath) {
-      const url =
-        `https://cdn.builder.io/api/v2/content/${encodeURIComponent(model)}` +
-        `?apiKey=${encodeURIComponent(API_KEY)}` +
-        `&userAttributes.urlPath=${encodeURIComponent(urlPath)}` +
-        `&limit=1&enrich=true`;
-
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Builder API ${res.status}`);
-      const data = await res.json();
-      return data?.results?.[0] || null;
-    }
-
-    async function render() {
-      await waitForBuilderComponent();
-
-      const el = document.getElementById("builderEl");
-      const urlPath = toUrlPath();
-
-      let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
-
-      if (!content && urlPath !== "/") {
-        content = await fetchBuilderContent(PAGE_MODEL, "/404");
+      function currentUrlPathForBuilder() {
+        // Convierte:
+        //   /test-pages/         -> /
+        //   /test-pages/about    -> /about
+        const path = location.pathname || "/";
+        if (path === BASE || path === BASE + "/") return "/";
+        if (path.startsWith(BASE + "/")) return path.slice(BASE.length) || "/";
+        return path; // por si algún día lo mueves a otro hosting
       }
 
-      if (!content) {
-        el.innerHTML = `
-          <div class="shell">
-            <h1>404</h1>
-            <p>No existe una página publicada para <b>${urlPath}</b>.</p>
-            <p><a href="${BASE}/">Volver a Home</a></p>
+      // Builder Web Components permite ejecutar callbacks al cargar
+      window.builderWcLoadCallbacks = [
+        (context) => {
+          const setAttrs = () => {
+            const urlPath = currentUrlPathForBuilder();
+            context.builder.setUserAttributes({ urlPath });
+            // Debug útil:
+            console.log("Builder urlPath =", urlPath);
+          };
+
+          // set inicial
+          setAttrs();
+
+          // y actualiza en navegación SPA
+          window.addEventListener("popstate", setAttrs);
+
+          // hook a pushState/replaceState para detectar navegación interna
+          const _ps = history.pushState;
+          history.pushState = function () {
+            _ps.apply(this, arguments);
+            window.dispatchEvent(new Event("pushstate"));
+          };
+          const _rs = history.replaceState;
+          history.replaceState = function () {
+            _rs.apply(this, arguments);
+            window.dispatchEvent(new Event("replacestate"));
+          };
+
+          window.addEventListener("pushstate", setAttrs);
+          window.addEventListener("replacestate", setAttrs);
+        }
+      ];
+    </script>
+
+    <!-- Carga el runtime -->
+    <script async src="https://cdn.builder.io/js/webcomponents"></script>
+  </head>
+
+  <body>
+    <header>
+      <!-- Links dentro del BASE -->
+      <a href="/test-pages/">Home</a>
+      <a href="/test-pages/about">About</a>
+      <a href="/test-pages/servicios">Servicios</a>
+    </header>
+
+    <main>
+      <!-- IMPORTANTE: api-key y model van DIRECTO aquí -->
+      <builder-component
+        id="builderRoot"
+        model="page"
+        api-key="f450ca45929045f782ca4fdfb394abb9"
+        reload-on-route
+      >
+        <div class="shell">Cargando…</div>
+      </builder-component>
+
+      <script>
+        // Captura errores / "no content" para no quedarte en blanco
+        const el = document.getElementById("builderRoot");
+
+        el.addEventListener("load", (event) => {
+          const data = event?.detail?.data;
+          if (!data) {
+            const urlPath = currentUrlPathForBuilder();
+            el.innerHTML = `<div class="shell">
+              <h1>404</h1>
+              <p>No hay contenido publicado en Builder para <b>${urlPath}</b>.</p>
+              <p>Revisa que exista una Page con <b>Page url = ${urlPath}</b> y esté en <b>Published</b>.</p>
+            </div>`;
+          }
+        });
+
+        el.addEventListener("error", (event) => {
+          console.error("Builder error:", event?.detail || event);
+          el.innerHTML = `<div class="shell">
+            <h1>Error cargando Builder</h1>
+            <pre>${String(event?.detail || event)}</pre>
           </div>`;
-        return;
-      }
+        });
 
-      // Aquí ya NO ponemos api-key/model (ya estaban). Solo content.
-      el.setAttribute("content", JSON.stringify(content));
-    }
+        // Navegación SPA: intercepta clicks internos para evitar recarga completa
+        document.addEventListener("click", (e) => {
+          const a = e.target.closest("a");
+          if (!a) return;
 
-    // Navegación SPA
-    document.addEventListener("click", (e) => {
-      const a = e.target.closest("a");
-      if (!a) return;
+          const href = a.getAttribute("href");
+          if (!href) return;
 
-      const href = a.getAttribute("href");
-      if (!href) return;
+          const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+          if (isModified) return;
 
-      const isSameSite = href.startsWith(BASE + "/") || href === BASE || href.startsWith("/");
-      const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
-      if (!isSameSite || isModified) return;
+          // solo intercepta URLs dentro de tu site
+          if (!href.startsWith(BASE + "/") && href !== BASE && href !== BASE + "/") return;
 
-      e.preventDefault();
-      history.pushState({}, "", href);
-      render();
-    });
-
-    window.addEventListener("popstate", render);
-
-    render().catch(err => {
-      console.error(err);
-      document.getElementById("builderEl").innerHTML =
-        `<div class="shell"><h1>Error</h1><pre>${String(err)}</pre></div>`;
-    });
-  </script>
-</body>
+          e.preventDefault();
+          history.pushState({}, "", href);
+        });
+      </script>
+    </main>
+  </body>
 </html>
