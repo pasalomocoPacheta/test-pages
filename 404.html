@@ -1,25 +1,64 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Redirect</title>
-    <meta http-equiv="refresh" content="0; url=/test-pages/" />
-    <script>
-      // Redirige /test-pages/cualquier-ruta -> /test-pages/?p=/cualquier-ruta
-      (function () {
-        const BASE = "/test-pages";
-        const path = location.pathname || "/";
-        let sub = "/";
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi web con Builder</title>
 
-        if (path === BASE || path === BASE + "/") sub = "/";
-        else if (path.startsWith(BASE + "/")) sub = path.slice(BASE.length) || "/";
-        else sub = path;
+  <!-- evita warning/404 de favicon -->
+  <link rel="icon" href="data:,">
 
-        const target = BASE + "/?p=" + encodeURIComponent(sub);
-        location.replace(target);
-      })();
-    </script>
-  </head>
-  <body></body>
+  <!-- Builder Web Components -->
+  <script async src="https://cdn.builder.io/js/webcomponents"></script>
+
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+    #debug { padding: 12px; font-size: 14px; }
+    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+    builder-component { display: block; min-height: 100vh; }
+  </style>
+</head>
+<body>
+
+  <div id="debug">
+    <div>URL actual: <code id="p1"></code></div>
+    <div>Builder url-path: <code id="p2"></code></div>
+    <div>customElements builder-component: <code id="p3"></code></div>
+  </div>
+
+  <builder-component
+    id="builderPage"
+    api-key="f450ca45929045f782ca4fdfb394abb9"
+    model="page">
+  </builder-component>
+
+  <script>
+    // === Ajusta este BASE a tu repo de GitHub Pages ===
+    const BASE = "/test-pages";
+
+    // Calcula el path que Builder espera: "/" o "/algo"
+    const path = location.pathname.startsWith(BASE)
+      ? (location.pathname.slice(BASE.length) || "/")
+      : (location.pathname || "/");
+
+    // Builder usa esta variable global internamente en algunos setups
+    window.__BUILDER_URL_PATH__ = path;
+
+    document.getElementById("p1").textContent = location.pathname;
+    document.getElementById("p2").textContent = window.__BUILDER_URL_PATH__;
+
+    // espera a que el custom element exista y aplica url-path
+    const apply = () => {
+      const def = customElements.get("builder-component");
+      document.getElementById("p3").textContent = def ? "OK" : "undefined";
+      if (!def) return setTimeout(apply, 50);
+
+      document.getElementById("builderPage")
+        .setAttribute("url-path", window.__BUILDER_URL_PATH__);
+
+      console.log("✅ url-path aplicado:", window.__BUILDER_URL_PATH__);
+    };
+    apply();
+  </script>
+</body>
 </html>
