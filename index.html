@@ -5,34 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Beluga</title>
 
-  <!-- Evita 404 favicon -->
   <link rel="icon" href="data:," />
 
-  <!-- Base SEO (se sobreescribe al cargar Builder) -->
+  <!-- SEO base (se actualiza al cargar Builder; ojo: esto NO es SEO SSR real) -->
   <meta name="description" content="" />
   <link rel="canonical" href="" />
 
-  <!-- Open Graph base -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="" />
   <meta property="og:description" content="" />
   <meta property="og:url" content="" />
   <meta property="og:image" content="" />
 
-  <!-- Twitter base -->
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="" />
   <meta name="twitter:description" content="" />
   <meta name="twitter:url" content="" />
   <meta name="twitter:image" content="" />
 
-  <!-- Builder Web Components runtime -->
   <script async src="https://cdn.builder.io/js/webcomponents"></script>
 
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+    builder-component { display:block; min-height: 100vh; }
+    .shell { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  </style>
 </head>
-<body>
 
-  <!-- Aquí se renderiza Builder -->
+<body>
   <builder-component id="builderRoot"></builder-component>
 
   <script>
@@ -40,14 +40,14 @@
     // CONFIG
     // =========================
     const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
-    const BASE = "/test-pages";     // repo name en GitHub Pages
-    const PAGE_MODEL = "page";      // model en Builder
-    const NOT_FOUND_PATH = "/404";  // crea en Builder una page con URL /404 (opcional, recomendado)
+    const BASE = "/test-pages";        // repo name en GitHub Pages
+    const PAGE_MODEL = "page";         // model en Builder
+    const NOT_FOUND_PATH = "/404";     // opcional: crea una page en Builder con URL "/404"
     // =========================
 
     const builderEl = document.getElementById("builderRoot");
 
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     async function waitForBuilderComponent() {
       while (!customElements.get("builder-component")) {
@@ -55,18 +55,45 @@
       }
     }
 
+    // 1) Lee la ruta real desde ?p= (SPA redirect típico en GitHub Pages)
+    function readSpaRedirectPath() {
+      const params = new URLSearchParams(location.search);
+      // muchos 404-tricks usan ?p= o ?path=
+      const p = params.get("p") || params.get("path");
+      if (!p) return null;
+
+      // p suele venir como "/testing" (ya decodeado por URLSearchParams)
+      let path = p.trim();
+      if (!path.startsWith("/")) path = "/" + path;
+
+      // Limpia la URL (quita ?p=...) para que quede bonita
+      // Mantiene el hash si lo hubiera
+      const clean = location.pathname + location.hash;
+      history.replaceState({}, "", clean);
+
+      return path;
+    }
+
+    // 2) Convierte URL actual (GH Pages) -> urlPath Builder
     function toUrlPath() {
-      // Convierte /test-pages/about -> /about
+      // Si venimos de redirect SPA, manda eso directamente a Builder
+      const redirected = readSpaRedirectPath();
+      if (redirected) return redirected;
+
       const p = location.pathname || "/";
+
+      // Casos:
+      // /test-pages           -> /
+      // /test-pages/          -> /
+      // /test-pages/testing   -> /testing
       if (p === BASE || p === BASE + "/") return "/";
       if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
-      return p;
+      return p; // si no está bajo BASE, úsalo tal cual
     }
 
     function canonicalUrl() {
-      // Canonical limpio para GitHub Pages (sin query/hash)
-      const cleanPath = location.pathname || "/";
-      return location.origin + cleanPath;
+      // Canonical sin query
+      return location.origin + (location.pathname || "/");
     }
 
     async function fetchBuilderContent(model, urlPath) {
@@ -82,9 +109,7 @@
       return data?.results?.[0] || null;
     }
 
-    // -------------------------
-    // SEO helpers
-    // -------------------------
+    // ---------- SEO helpers ----------
     function ensureMeta(attr, key, value) {
       if (value == null) return;
       let el = document.head.querySelector(`meta[${attr}="${key}"]`);
@@ -107,15 +132,13 @@
       el.setAttribute("href", href);
     }
 
-    function absolutizeImage(url) {
+    function absolutize(url) {
       if (!url) return "";
       try { return new URL(url, location.origin).toString(); }
       catch { return ""; }
     }
 
     function pickSeoImage(d) {
-      // Intenta encontrar un campo típico donde guardes la imagen SEO.
-      // Si en tu Builder usas otro nombre, dímelo y lo ajusto.
       return (
         d.ogImage ||
         d.og_image ||
@@ -129,58 +152,63 @@
 
     function getSeoFromContent(content) {
       const d = content?.data || {};
-      const title = d.title || content?.name || "";
-      const description = d.description || "";
-      const image = pickSeoImage(d);
-      return { title, description, image };
+      return {
+        title: d.title || content?.name || "",
+        description: d.description || "",
+        image: pickSeoImage(d)
+      };
     }
 
     function applySeo({ title, description, image }) {
       const canon = canonicalUrl();
-      const absImg = absolutizeImage(image);
+      const img = absolutize(image);
 
-      // Title
       if (title) document.title = title;
 
-      // Meta description
       ensureMeta("name", "description", description || "");
-
-      // Canonical
       ensureLink("canonical", canon);
 
-      // Open Graph
       ensureMeta("property", "og:type", "website");
       ensureMeta("property", "og:title", title || "");
       ensureMeta("property", "og:description", description || "");
       ensureMeta("property", "og:url", canon);
-      // Si no hay imagen, deja vacío (mejor que una rota)
-      ensureMeta("property", "og:image", absImg || "");
+      ensureMeta("property", "og:image", img || "");
 
-      // Twitter
-      ensureMeta("name", "twitter:card", absImg ? "summary_large_image" : "summary");
+      ensureMeta("name", "twitter:card", img ? "summary_large_image" : "summary");
       ensureMeta("name", "twitter:title", title || "");
       ensureMeta("name", "twitter:description", description || "");
       ensureMeta("name", "twitter:url", canon);
-      ensureMeta("name", "twitter:image", absImg || "");
+      ensureMeta("name", "twitter:image", img || "");
     }
 
-    // -------------------------
-    // Render
-    // -------------------------
+    // ---------- navegación interna (respeta BASE) ----------
+    function normalizeHref(href) {
+      // Convierte "/testing" -> "/test-pages/testing" (solo en GH Pages)
+      if (!href) return href;
+      if (/^https?:\/\//i.test(href)) return href;
+      if (href.startsWith("mailto:") || href.startsWith("tel:")) return href;
+
+      // ya viene con BASE
+      if (href === BASE || href.startsWith(BASE + "/")) return href;
+
+      // rutas absolutas del sitio "/testing"
+      if (href.startsWith("/")) return BASE + href;
+
+      // rutas relativas "testing"
+      return BASE + "/" + href.replace(/^\.?\//, "");
+    }
+
     async function render() {
       const urlPath = toUrlPath();
 
       await waitForBuilderComponent();
 
-      // 1) Trae contenido por urlPath
       let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
 
-      // 2) Fallback a /404 si no existe (opcional)
       if (!content && urlPath !== "/") {
         content = await fetchBuilderContent(PAGE_MODEL, NOT_FOUND_PATH);
       }
 
-      // 3) Si sigue sin existir, pinta un 404 mínimo
       if (!content) {
         builderEl.removeAttribute("content");
         builderEl.innerHTML = `
@@ -189,45 +217,38 @@
             <p>No existe una página publicada para <b>${urlPath}</b>.</p>
             <p><a href="${BASE}/">Volver a Home</a></p>
           </div>`;
-        // SEO mínimo para 404
         applySeo({ title: "404 - No encontrado", description: "", image: "" });
         return;
       }
 
-      // 4) SEO desde Builder
       applySeo(getSeoFromContent(content));
 
-      // 5) Renderiza JSON en Builder webcomponent
       builderEl.setAttribute("api-key", API_KEY);
       builderEl.setAttribute("model", PAGE_MODEL);
       builderEl.setAttribute("content", JSON.stringify(content));
     }
 
-    // Navegación SPA (opcional): intercepta links internos
     document.addEventListener("click", (e) => {
       const a = e.target.closest("a");
       if (!a) return;
 
-      const href = a.getAttribute("href");
-      if (!href) return;
+      const hrefRaw = a.getAttribute("href");
+      if (!hrefRaw) return;
 
-      // ignora links externos y modificadores (ctrl/cmd/shift)
       const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
       if (isModified) return;
-      if (/^https?:\/\//i.test(href)) return;
-      if (href.startsWith("mailto:") || href.startsWith("tel:")) return;
 
-      // solo intercepta rutas dentro del BASE
-      if (!(href === BASE || href.startsWith(BASE + "/") || href.startsWith("/"))) return;
+      // intercepta solo internos
+      if (/^https?:\/\//i.test(hrefRaw)) return;
 
       e.preventDefault();
+      const href = normalizeHref(hrefRaw);
       history.pushState({}, "", href);
       render().catch(console.error);
     });
 
     window.addEventListener("popstate", () => render().catch(console.error));
 
-    // Render inicial
     render().catch(err => {
       console.error(err);
       builderEl.innerHTML = `<div class="shell"><h1>Error</h1><pre>${String(err)}</pre></div>`;
