@@ -3,59 +3,58 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Builder debug</title>
+  <title>Builder + GitHub Pages</title>
 
-  <script>
-    const base = '/test-pages';
-    const path = location.pathname.startsWith(base)
-      ? (location.pathname.slice(base.length) || '/')
-      : (location.pathname || '/');
-    window.__BUILDER_URL_PATH__ = path;
-  </script>
-
-  <script async src="https://cdn.builder.io/js/webcomponents"
-    onload="console.log('✅ builder webcomponents loaded')"
-    onerror="console.error('❌ builder webcomponents failed to load')">
-  </script>
+  <script async src="https://cdn.builder.io/js/webcomponents"></script>
 
   <style>
     body { margin:0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    #debug { padding: 12px; font-size: 14px; }
-    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
-    builder-component {
-      display: block;
-      min-height: 100vh;
-    }
+    builder-component { display:block; min-height: 100vh; }
   </style>
 </head>
 <body>
-  <div id="debug">
-    <div>URL actual: <code id="p1"></code></div>
-    <div>Builder url-path: <code id="p2"></code></div>
-    <div>customElements builder-component: <code id="p3"></code></div>
-  </div>
 
-  <builder-component
-    id="builderPage"
-    api-key="f450ca45929045f782ca4fdfb394abb9"
-    model="page">
-  </builder-component>
+  <builder-component id="builderEl"></builder-component>
 
   <script>
-    document.getElementById('p1').textContent = location.pathname;
-    document.getElementById('p2').textContent = window.__BUILDER_URL_PATH__;
+    const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
+    const base = "/test-pages";
+    const urlPath = location.pathname.startsWith(base)
+      ? (location.pathname.slice(base.length) || "/")
+      : (location.pathname || "/");
 
-    // espera a que el custom element exista
-    const apply = () => {
-      const def = customElements.get('builder-component');
-      document.getElementById('p3').textContent = def ? 'OK' : 'undefined';
-      if (!def) return setTimeout(apply, 50);
+    async function load() {
+      // Espera a que el custom element exista
+      while (!customElements.get("builder-component")) {
+        await new Promise(r => setTimeout(r, 50));
+      }
 
-      document.getElementById('builderPage')
-        .setAttribute('url-path', window.__BUILDER_URL_PATH__);
-      console.log('✅ url-path aplicado:', window.__BUILDER_URL_PATH__);
-    };
-    apply();
+      const res = await fetch(
+        `https://cdn.builder.io/api/v2/content/page?apiKey=${API_KEY}` +
+        `&userAttributes.urlPath=${encodeURIComponent(urlPath)}` +
+        `&limit=1&enrich=true`
+      );
+      const data = await res.json();
+      const content = data?.results?.[0];
+
+      const el = document.getElementById("builderEl");
+
+      if (!content) {
+        el.innerHTML = `<div style="padding:24px">No hay página publicada para <b>${urlPath}</b></div>`;
+        return;
+      }
+
+      // Inyecta el contenido al componente para que renderice
+      el.setAttribute("api-key", API_KEY);
+      el.setAttribute("model", "page");
+      el.setAttribute("content", JSON.stringify(content));
+    }
+
+    load().catch(err => {
+      console.error(err);
+      document.body.innerHTML = "<pre style='padding:24px'>Error cargando Builder</pre>";
+    });
   </script>
+
 </body>
 </html>
