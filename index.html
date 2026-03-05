@@ -3,28 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mi web con Builder</title>
-
-  <script async src="https://cdn.builder.io/js/webcomponents"></script>
-
-  <style>
-    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; background: #fff; }
-  </style>
+  <title>Builder debug</title>
 
   <script>
-    // IMPORTANTE: prefijo del repo en GitHub Pages
     const base = '/test-pages';
-
-    // Convierte /test-pages/ -> /  y /test-pages/about -> /about
     const path = location.pathname.startsWith(base)
       ? (location.pathname.slice(base.length) || '/')
       : (location.pathname || '/');
-
     window.__BUILDER_URL_PATH__ = path;
   </script>
-</head>
 
+  <script async src="https://cdn.builder.io/js/webcomponents"
+    onload="console.log('✅ builder webcomponents loaded')"
+    onerror="console.error('❌ builder webcomponents failed to load')">
+  </script>
+
+  <style>
+    body { margin:0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+    #debug { padding: 12px; font-size: 14px; }
+    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
 <body>
+  <div id="debug">
+    <div>URL actual: <code id="p1"></code></div>
+    <div>Builder url-path: <code id="p2"></code></div>
+    <div>customElements builder-component: <code id="p3"></code></div>
+  </div>
+
   <builder-component
     id="builderPage"
     api-key="f450ca45929045f782ca4fdfb394abb9"
@@ -32,9 +38,20 @@
   </builder-component>
 
   <script>
-    // Asigna el path calculado al componente
-    document.getElementById('builderPage')
-      .setAttribute('url-path', window.__BUILDER_URL_PATH__);
+    document.getElementById('p1').textContent = location.pathname;
+    document.getElementById('p2').textContent = window.__BUILDER_URL_PATH__;
+
+    // espera a que el custom element exista
+    const apply = () => {
+      const def = customElements.get('builder-component');
+      document.getElementById('p3').textContent = def ? 'OK' : 'undefined';
+      if (!def) return setTimeout(apply, 50);
+
+      document.getElementById('builderPage')
+        .setAttribute('url-path', window.__BUILDER_URL_PATH__);
+      console.log('✅ url-path aplicado:', window.__BUILDER_URL_PATH__);
+    };
+    apply();
   </script>
 </body>
 </html>
