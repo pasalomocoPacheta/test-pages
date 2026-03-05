@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beluga (Builder + GitHub Pages)</title>
+
+  <!-- evita 404 favicon -->
+  <link rel="icon" href="data:,">
+
+  <!-- Builder Web Components runtime -->
+  <script async src="https://cdn.builder.io/js/webcomponents"></script>
+
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+    builder-component { display: block; min-height: 100vh; }
+    .shell { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    .muted { opacity: .7; }
+  </style>
+</head>
+<body>
+
+  <!-- opcional: header fijo -->
+  <div class="shell muted" style="padding-bottom:0">
+    <a href="/test-pages/" data-nav>Home</a> ·
+    <a href="/test-pages/about" data-nav>About</a> ·
+    <a href="/test-pages/servicios" data-nav>Servicios</a>
+  </div>
+
+  <!-- aquí renderiza Builder -->
+  <builder-component id="builderEl"></builder-component>
+
+  <script>
+    // ========= CONFIG =========
+    const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
+    // prefijo GitHub Pages: /<repo>
+    const BASE = "/test-pages";
+    // modelo principal (páginas)
+    const PAGE_MODEL = "page";
+    // ==========================
+
+    function toUrlPath() {
+      // convierte /test-pages/about -> /about
+      const p = location.pathname || "/";
+      if (p === BASE || p === BASE + "/") return "/";
+      if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
+      return p; // por si lo abres en otro hosting
+    }
+
+    async function waitForBuilderComponent() {
+      while (!customElements.get("builder-component")) {
+        await new Promise(r => setTimeout(r, 30));
+      }
+    }
+
+    async function fetchBuilderContent(model, urlPath) {
+      const url =
+        `https://cdn.builder.io/api/v2/content/${encodeURIComponent(model)}` +
+        `?apiKey=${encodeURIComponent(API_KEY)}` +
+        `&userAttributes.urlPath=${encodeURIComponent(urlPath)}` +
+        `&limit=1&enrich=true`;
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Builder API ${res.status}`);
+      const data = await res.json();
+      return data?.results?.[0] || null;
+    }
+
+    async function render() {
+      const el = document.getElementById("builderEl");
+      const urlPath = toUrlPath();
+
+      await waitForBuilderComponent();
+
+      // 1) intenta cargar página normal (model "page")
+      let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
+
+      // 2) fallback: si no hay nada y no es "/" -> prueba 404 lógica en Builder (opcional)
+      //    Crea en Builder una page con URL "/404" si quieres personalizar el 404.
+      if (!content && urlPath !== "/") {
+        content = await fetchBuilderContent(PAGE_MODEL, "/404");
+      }
+
+      if (!content) {
+        // último fallback: HTML simple
+        el.innerHTML = `
+          <div class="shell">
+            <h1>404</h1>
+            <p>No existe una página publicada para <b>${urlPath}</b>.</p>
+            <p><a href="${BASE}/" data-nav>Volver a Home</a></p>
+          </div>`;
+        return;
+      }
+
+      // Inyecta contenido JSON en el webcomponent
+      el.setAttribute("api-key", API_KEY);
+      el.setAttribute("model", PAGE_MODEL);
+      el.setAttribute("content", JSON.stringify(content));
+    }
+
+    // Navegación SPA: intercepta clicks internos
+    document.addEventListener("click", (e) => {
+      const a = e.target.closest("a");
+      if (!a) return;
+
+      const href = a.getAttribute("href");
+      if (!href) return;
+
+      const isSameOrigin = href.startsWith(BASE + "/") || href === BASE || href.startsWith("/");
+      const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+      if (!isSameOrigin || isModified) return;
+
+      // evita recarga completa
+      e.preventDefault();
+      history.pushState({}, "", href);
+      render();
+    });
+
+    window.addEventListener("popstate", render);
+
+    // Render inicial
+    render().catch(err => {
+      console.error(err);
+      document.getElementById("builderEl").innerHTML =
+        `<div class="shell"><h1>Error</h1><pre>${String(err)}</pre></div>`;
+    });
+  </script>
+</body>
+</html>
