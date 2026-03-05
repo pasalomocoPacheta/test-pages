@@ -1,137 +1,238 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Beluga · Builder + GitHub Pages</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beluga</title>
 
-    <!-- evita 404 del favicon en consola -->
-    <link rel="icon" href="data:,">
+  <!-- Evita 404 favicon -->
+  <link rel="icon" href="data:," />
 
-    <style>
-      main { min-height: calc(100vh - 58px); }
-    </style>
+  <!-- Base SEO (se sobreescribe al cargar Builder) -->
+  <meta name="description" content="" />
+  <link rel="canonical" href="" />
 
-    <script>
-      // ======= CONFIG =======
-      const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
-      const BASE = "/test-pages";     // repo name en GitHub Pages
-      const MODEL = "page";           // tu modelo de páginas en Builder
-      // ======================
+  <!-- Open Graph base -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="" />
+  <meta property="og:description" content="" />
+  <meta property="og:url" content="" />
+  <meta property="og:image" content="" />
 
-      // Si venimos desde 404.html, tendremos ?p=/ruta
-      (function normalizeFrom404Redirect() {
-        const url = new URL(location.href);
-        const p = url.searchParams.get("p"); // ej: "/about"
-        if (p) {
-          // Limpia la query y deja la URL bonita /test-pages/about
-          const clean = (p.startsWith("/") ? p : "/" + p);
-          history.replaceState({}, "", BASE + (clean === "/" ? "/" : clean));
-        }
-      })();
+  <!-- Twitter base -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="" />
+  <meta name="twitter:description" content="" />
+  <meta name="twitter:url" content="" />
+  <meta name="twitter:image" content="" />
 
-      function currentUrlPathForBuilder() {
-        // Convierte:
-        //   /test-pages/         -> /
-        //   /test-pages/about    -> /about
-        const path = location.pathname || "/";
-        if (path === BASE || path === BASE + "/") return "/";
-        if (path.startsWith(BASE + "/")) return path.slice(BASE.length) || "/";
-        return path; // por si algún día lo mueves a otro hosting
+  <!-- Builder Web Components runtime -->
+  <script async src="https://cdn.builder.io/js/webcomponents"></script>
+
+</head>
+<body>
+
+  <!-- Aquí se renderiza Builder -->
+  <builder-component id="builderRoot"></builder-component>
+
+  <script>
+    // =========================
+    // CONFIG
+    // =========================
+    const API_KEY = "f450ca45929045f782ca4fdfb394abb9";
+    const BASE = "/test-pages";     // repo name en GitHub Pages
+    const PAGE_MODEL = "page";      // model en Builder
+    const NOT_FOUND_PATH = "/404";  // crea en Builder una page con URL /404 (opcional, recomendado)
+    // =========================
+
+    const builderEl = document.getElementById("builderRoot");
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function waitForBuilderComponent() {
+      while (!customElements.get("builder-component")) {
+        await sleep(25);
+      }
+    }
+
+    function toUrlPath() {
+      // Convierte /test-pages/about -> /about
+      const p = location.pathname || "/";
+      if (p === BASE || p === BASE + "/") return "/";
+      if (p.startsWith(BASE + "/")) return p.slice(BASE.length) || "/";
+      return p;
+    }
+
+    function canonicalUrl() {
+      // Canonical limpio para GitHub Pages (sin query/hash)
+      const cleanPath = location.pathname || "/";
+      return location.origin + cleanPath;
+    }
+
+    async function fetchBuilderContent(model, urlPath) {
+      const url =
+        `https://cdn.builder.io/api/v2/content/${encodeURIComponent(model)}` +
+        `?apiKey=${encodeURIComponent(API_KEY)}` +
+        `&userAttributes.urlPath=${encodeURIComponent(urlPath)}` +
+        `&limit=1&enrich=true`;
+
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Builder API error ${res.status}`);
+      const data = await res.json();
+      return data?.results?.[0] || null;
+    }
+
+    // -------------------------
+    // SEO helpers
+    // -------------------------
+    function ensureMeta(attr, key, value) {
+      if (value == null) return;
+      let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("content", value);
+    }
+
+    function ensureLink(rel, href) {
+      if (!href) return;
+      let el = document.head.querySelector(`link[rel="${rel}"]`);
+      if (!el) {
+        el = document.createElement("link");
+        el.setAttribute("rel", rel);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("href", href);
+    }
+
+    function absolutizeImage(url) {
+      if (!url) return "";
+      try { return new URL(url, location.origin).toString(); }
+      catch { return ""; }
+    }
+
+    function pickSeoImage(d) {
+      // Intenta encontrar un campo típico donde guardes la imagen SEO.
+      // Si en tu Builder usas otro nombre, dímelo y lo ajusto.
+      return (
+        d.ogImage ||
+        d.og_image ||
+        d.image ||
+        d.imageUrl ||
+        d.socialImage ||
+        (d.meta && (d.meta.ogImage || d.meta.image)) ||
+        ""
+      );
+    }
+
+    function getSeoFromContent(content) {
+      const d = content?.data || {};
+      const title = d.title || content?.name || "";
+      const description = d.description || "";
+      const image = pickSeoImage(d);
+      return { title, description, image };
+    }
+
+    function applySeo({ title, description, image }) {
+      const canon = canonicalUrl();
+      const absImg = absolutizeImage(image);
+
+      // Title
+      if (title) document.title = title;
+
+      // Meta description
+      ensureMeta("name", "description", description || "");
+
+      // Canonical
+      ensureLink("canonical", canon);
+
+      // Open Graph
+      ensureMeta("property", "og:type", "website");
+      ensureMeta("property", "og:title", title || "");
+      ensureMeta("property", "og:description", description || "");
+      ensureMeta("property", "og:url", canon);
+      // Si no hay imagen, deja vacío (mejor que una rota)
+      ensureMeta("property", "og:image", absImg || "");
+
+      // Twitter
+      ensureMeta("name", "twitter:card", absImg ? "summary_large_image" : "summary");
+      ensureMeta("name", "twitter:title", title || "");
+      ensureMeta("name", "twitter:description", description || "");
+      ensureMeta("name", "twitter:url", canon);
+      ensureMeta("name", "twitter:image", absImg || "");
+    }
+
+    // -------------------------
+    // Render
+    // -------------------------
+    async function render() {
+      const urlPath = toUrlPath();
+
+      await waitForBuilderComponent();
+
+      // 1) Trae contenido por urlPath
+      let content = await fetchBuilderContent(PAGE_MODEL, urlPath);
+
+      // 2) Fallback a /404 si no existe (opcional)
+      if (!content && urlPath !== "/") {
+        content = await fetchBuilderContent(PAGE_MODEL, NOT_FOUND_PATH);
       }
 
-      // Builder Web Components permite ejecutar callbacks al cargar
-      window.builderWcLoadCallbacks = [
-        (context) => {
-          const setAttrs = () => {
-            const urlPath = currentUrlPathForBuilder();
-            context.builder.setUserAttributes({ urlPath });
-            // Debug útil:
-            console.log("Builder urlPath =", urlPath);
-          };
-
-          // set inicial
-          setAttrs();
-
-          // y actualiza en navegación SPA
-          window.addEventListener("popstate", setAttrs);
-
-          // hook a pushState/replaceState para detectar navegación interna
-          const _ps = history.pushState;
-          history.pushState = function () {
-            _ps.apply(this, arguments);
-            window.dispatchEvent(new Event("pushstate"));
-          };
-          const _rs = history.replaceState;
-          history.replaceState = function () {
-            _rs.apply(this, arguments);
-            window.dispatchEvent(new Event("replacestate"));
-          };
-
-          window.addEventListener("pushstate", setAttrs);
-          window.addEventListener("replacestate", setAttrs);
-        }
-      ];
-    </script>
-
-    <!-- Carga el runtime -->
-    <script async src="https://cdn.builder.io/js/webcomponents"></script>
-  </head>
-
-  <body>
-    <main>
-      <!-- IMPORTANTE: api-key y model van DIRECTO aquí -->
-      <builder-component
-        id="builderRoot"
-        model="page"
-        api-key="f450ca45929045f782ca4fdfb394abb9"
-        reload-on-route
-      >
-        <div class="shell">Cargando…</div>
-      </builder-component>
-
-      <script>
-        // Captura errores / "no content" para no quedarte en blanco
-        const el = document.getElementById("builderRoot");
-
-        el.addEventListener("load", (event) => {
-          const data = event?.detail?.data;
-          if (!data) {
-            const urlPath = currentUrlPathForBuilder();
-            el.innerHTML = `<div class="shell">
-              <h1>404</h1>
-              <p>No hay contenido publicado en Builder para <b>${urlPath}</b>.</p>
-              <p>Revisa que exista una Page con <b>Page url = ${urlPath}</b> y esté en <b>Published</b>.</p>
-            </div>`;
-          }
-        });
-
-        el.addEventListener("error", (event) => {
-          console.error("Builder error:", event?.detail || event);
-          el.innerHTML = `<div class="shell">
-            <h1>Error cargando Builder</h1>
-            <pre>${String(event?.detail || event)}</pre>
+      // 3) Si sigue sin existir, pinta un 404 mínimo
+      if (!content) {
+        builderEl.removeAttribute("content");
+        builderEl.innerHTML = `
+          <div class="shell">
+            <h1>404</h1>
+            <p>No existe una página publicada para <b>${urlPath}</b>.</p>
+            <p><a href="${BASE}/">Volver a Home</a></p>
           </div>`;
-        });
+        // SEO mínimo para 404
+        applySeo({ title: "404 - No encontrado", description: "", image: "" });
+        return;
+      }
 
-        // Navegación SPA: intercepta clicks internos para evitar recarga completa
-        document.addEventListener("click", (e) => {
-          const a = e.target.closest("a");
-          if (!a) return;
+      // 4) SEO desde Builder
+      applySeo(getSeoFromContent(content));
 
-          const href = a.getAttribute("href");
-          if (!href) return;
+      // 5) Renderiza JSON en Builder webcomponent
+      builderEl.setAttribute("api-key", API_KEY);
+      builderEl.setAttribute("model", PAGE_MODEL);
+      builderEl.setAttribute("content", JSON.stringify(content));
+    }
 
-          const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
-          if (isModified) return;
+    // Navegación SPA (opcional): intercepta links internos
+    document.addEventListener("click", (e) => {
+      const a = e.target.closest("a");
+      if (!a) return;
 
-          // solo intercepta URLs dentro de tu site
-          if (!href.startsWith(BASE + "/") && href !== BASE && href !== BASE + "/") return;
+      const href = a.getAttribute("href");
+      if (!href) return;
 
-          e.preventDefault();
-          history.pushState({}, "", href);
-        });
-      </script>
-    </main>
-  </body>
+      // ignora links externos y modificadores (ctrl/cmd/shift)
+      const isModified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+      if (isModified) return;
+      if (/^https?:\/\//i.test(href)) return;
+      if (href.startsWith("mailto:") || href.startsWith("tel:")) return;
+
+      // solo intercepta rutas dentro del BASE
+      if (!(href === BASE || href.startsWith(BASE + "/") || href.startsWith("/"))) return;
+
+      e.preventDefault();
+      history.pushState({}, "", href);
+      render().catch(console.error);
+    });
+
+    window.addEventListener("popstate", () => render().catch(console.error));
+
+    // Render inicial
+    render().catch(err => {
+      console.error(err);
+      builderEl.innerHTML = `<div class="shell"><h1>Error</h1><pre>${String(err)}</pre></div>`;
+      applySeo({ title: "Error", description: "", image: "" });
+    });
+  </script>
+</body>
 </html>
