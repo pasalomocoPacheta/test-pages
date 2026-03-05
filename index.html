@@ -1,33 +1,40 @@
 <!DOCTYPE html>
-
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>Mi web con Builder</title>
 
-  <!-- Builder Web Components -->
-
-<script async src="https://cdn.builder.io/js/webcomponents"></script>
+  <script async src="https://cdn.builder.io/js/webcomponents"></script>
 
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Arial, sans-serif;
-      background: #ffffff;
-    }
+    body { margin: 0; font-family: system-ui, -apple-system, Arial, sans-serif; background: #fff; }
   </style>
 
+  <script>
+    // IMPORTANTE: prefijo del repo en GitHub Pages
+    const base = '/test-pages';
+
+    // Convierte /test-pages/ -> /  y /test-pages/about -> /about
+    const path = location.pathname.startsWith(base)
+      ? (location.pathname.slice(base.length) || '/')
+      : (location.pathname || '/');
+
+    window.__BUILDER_URL_PATH__ = path;
+  </script>
 </head>
 
 <body>
+  <builder-component
+    id="builderPage"
+    api-key="f450ca45929045f782ca4fdfb394abb9"
+    model="page">
+  </builder-component>
 
-  <!-- Builder renderiza aquí la página correspondiente -->
-
-<builder-component
- api-key="f450ca45929045f782ca4fdfb394abb9"
- model="page"> </builder-component>
-
+  <script>
+    // Asigna el path calculado al componente
+    document.getElementById('builderPage')
+      .setAttribute('url-path', window.__BUILDER_URL_PATH__);
+  </script>
 </body>
 </html>
